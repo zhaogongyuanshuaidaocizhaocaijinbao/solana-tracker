@@ -57,7 +57,6 @@
     </div>
     <script>
         let solPrice = 0;
-        const solscanApiKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjcmVhdGVkQXQiOjE3NDA1ODk1MzY4NTIsImVtYWlsIjoiamNpODg4ODg4ODg4QGdtYWlsLmNvbSIsImFjdGlvbiI6InRva2VuLWFwaSIsImFwaVZlcnNpb24iOiJ2MiIsImlhdCI6MTc0MDU4OTUzNn0.gKXsye46ylnkynJx0jvgvil9KkYWKBypT7_QDLxM3HY";
 
         async function fetchTransactions() {
             const wallet = document.getElementById("walletAddress").value || "6yzEqmWwjFgyqhrowGUfbDv3fD3Vh42B99oEPCZxjskf";
@@ -70,14 +69,10 @@
                 document.getElementById("transactions").innerHTML = "";
                 document.getElementById("transfers").innerHTML = "";
 
-                // 获取交易记录（使用 Solscan API）
-                const solscanUrl = `https://api.solscan.io/v2/account/transactions?address=${wallet}&limit=100`;
-                const response = await fetch(solscanUrl, {
-                    headers: {
-                        "Authorization": `Bearer ${solscanApiKey}`
-                    }
-                });
-                if (!response.ok) throw new Error(`Solscan API 响应失败，状态码: ${response.status}`);
+                // 调用后端代理 API
+                const proxyUrl = "https://your-vercel-app.vercel.app/api/solscan"; // 替换为实际后端 URL
+                const response = await fetch(`${proxyUrl}?address=${wallet}`);
+                if (!response.ok) throw new Error(`后端 API 响应失败，状态码: ${response.status}`);
                 const transactions = await response.json();
 
                 // 获取 SOL 价格
@@ -101,7 +96,7 @@
                 renderData(data);
             } catch (error) {
                 console.error(error);
-                document.getElementById("error").textContent = `查询失败：${error.message}（可能需检查 API 密钥或网络）`;
+                document.getElementById("error").textContent = `查询失败：${error.message}（可能需检查网络或后端 API）`;
                 document.getElementById("error").style.display = "block";
             } finally {
                 document.getElementById("loading").style.display = "none";
