@@ -57,32 +57,7 @@
     </div>
     <script>
         let solPrice = 0;
-        const proxyUrls = [
-            "https://thingproxy.freeboard.io/fetch/", // 新的免费代理
-            "https://cors-anywhere.herokuapp.com/", // 可能需启用
-            "https://api.allorigins.win/raw?url=" // 备用
-        ];
-
-        async function fetchWithProxy(url, options) {
-            for (const proxy of proxyUrls) {
-                try {
-                    const response = await fetch(proxy + encodeURIComponent(url), options);
-                    if (response.ok) return response;
-                    console.warn(`Proxy ${proxy} failed with status ${response.status}`);
-                } catch (error) {
-                    console.warn(`Proxy ${proxy} failed: ${error.message}`);
-                }
-            }
-            // 尝试直接调用（可能仍受 CORS 限制）
-            try {
-                const directResponse = await fetch(url, options);
-                if (directResponse.ok) return directResponse;
-                console.warn(`Direct call failed with status ${directResponse.status}`);
-            } catch (error) {
-                console.warn(`Direct call failed: ${error.message}`);
-            }
-            throw new Error("所有代理和直接调用均失败，请检查网络或稍后重试（可能需加速器）");
-        }
+        const solscanApiKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjcmVhdGVkQXQiOjE3NDA1ODk1MzY4NTIsImVtYWlsIjoiamNpODg4ODg4ODg4QGdtYWlsLmNvbSIsImFjdGlvbiI6InRva2VuLWFwaSIsImFwaVZlcnNpb24iOiJ2MiIsImlhdCI6MTc0MDU4OTUzNn0.gKXsye46ylnkynJx0jvgvil9KkYWKBypT7_QDLxM3HY";
 
         async function fetchTransactions() {
             const wallet = document.getElementById("walletAddress").value || "6yzEqmWwjFgyqhrowGUfbDv3fD3Vh42B99oEPCZxjskf";
@@ -95,130 +70,83 @@
                 document.getElementById("transactions").innerHTML = "";
                 document.getElementById("transfers").innerHTML = "";
 
-                // 获取交易签名
-                const solanaUrl = "https://api.mainnet-beta.solana.com";
-                const payload = {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "getSignaturesForAddress",
-                    "params": [wallet, {"limit": 100}]
-                };
-                const sigResponse = await fetchWithProxy(solanaUrl, {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json", "Origin": "https://zhaogongyuanshuaidaocizhaocaijinbao.github.io"},
-                    body: JSON.stringify(payload)
+                // 获取交易记录（使用 Solscan API）
+                const solscanUrl = `https://api.solscan.io/v2/account/transactions?address=${wallet}&limit=100`;
+                const response = await fetch(solscanUrl, {
+                    headers: {
+                        "Authorization": `Bearer ${solscanApiKey}`
+                    }
                 });
-                if (!sigResponse.ok) throw new Error(`Solana API 响应失败，状态码: ${sigResponse.status}`);
-                const signatures = (await sigResponse.json()).result;
+                if (!response.ok) throw new Error(`Solscan API 响应失败，状态码: ${response.status}`);
+                const transactions = await response.json();
 
                 // 获取 SOL 价格
                 solPrice = await fetchSolPrice();
 
-                // 获取每笔交易详情
-                const transactions = await Promise.all(signatures.map(async sig => {
-                    const tx = await fetchTransaction(sig.signature);
-                    return parseTransaction(tx, wallet);
-                }));
+                // 解析交易数据
+                const parsedTransactions = transactions.data.map(tx => parseTransaction(tx, wallet));
 
                 const data = {
                     walletAddress: wallet,
                     lastUpdated: new Date().toISOString(),
-                    transactions,
+                    transactions: parsedTransactions,
                     solPrice,
-                    totalProfitLoss: transactions.reduce((sum, tx) => sum + (tx.profitLoss || 0), 0),
+                    totalProfitLoss: parsedTransactions.reduce((sum, tx) => sum + (tx.profitLoss || 0), 0),
                     totalFee: {
-                        sol: transactions.reduce((sum, tx) => sum + (tx.fee.sol || 0), 0),
-                        usdt: transactions.reduce((sum, tx) => sum + (tx.fee.usdt || 0), 0)
+                        sol: parsedTransactions.reduce((sum, tx) => sum + (tx.fee.sol || 0), 0),
+                        usdt: parsedTransactions.reduce((sum, tx) => sum + (tx.fee.usdt || 0), 0)
                     }
                 };
                 localStorage.setItem("solanaData", JSON.stringify(data));
                 renderData(data);
             } catch (error) {
                 console.error(error);
-                document.getElementById("error").textContent = `查询失败：${error.message}（可能需加速器或更换代理）`;
+                document.getElementById("error").textContent = `查询失败：${error.message}（可能需检查 API 密钥或网络）`;
                 document.getElementById("error").style.display = "block";
             } finally {
                 document.getElementById("loading").style.display = "none";
             }
         }
 
-        async function fetchTransaction(signature) {
-            const solanaUrl = "https://api.mainnet-beta.solana.com";
-            const payload = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "getTransaction",
-                "params": [signature, {"encoding": "jsonParsed"}]
-            };
-            const response = await fetchWithProxy(solanaUrl, {
-                method: "POST",
-                headers: {"Content-Type": "application/json", "Origin": "https://zhaogongyuanshuaidaocizhaocaijinbao.github.io"},
-                body: JSON.stringify(payload)
-            });
-            if (!response.ok) throw new Error(`交易详情获取失败，状态码: ${response.status}`);
-            return await response.json();
-        }
-
-        async function fetchSolPrice() {
-            const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usdt");
-            if (!response.ok) throw new Error(`价格获取失败，状态码: ${response.status}`);
-            return (await response.json()).solana.usdt;
-        }
-
         function parseTransaction(tx, wallet) {
-            if (!tx.result || !tx.result.meta || !tx.result.transaction) {
-                return { type: "unknown", fee: { sol: 0, usdt: 0 } }; // 错误处理
-            }
-
-            const meta = tx.result.meta;
-            const fee = meta.fee / 1e9; // lamports to SOL
-            const instructions = tx.result.transaction.message.instructions;
-            const preBalances = meta.preBalances;
-            const postBalances = meta.postBalances;
-            const accountKeys = tx.result.transaction.message.accountKeys;
-
             let type = "unknown", token = "SOL", amount = 0, price = null, profitLoss = null, status = "unknown", targetAddress = null, sourceAddress = null;
 
-            // 解析余额变化，确定转账
-            const walletIndex = accountKeys.indexOf(wallet);
-            if (walletIndex === -1) return { type, fee: { sol: fee, usdt: fee * solPrice } }; // 钱包地址不在交易中
-
-            const balanceChange = postBalances[walletIndex] - preBalances[walletIndex];
-            if (balanceChange > 0) {
-                type = "transferIn";
-                amount = (balanceChange - meta.fee) / 1e9; // SOL 单位
-                sourceAddress = accountKeys.find(key => key !== wallet && preBalances[accountKeys.indexOf(key)] > postBalances[accountKeys.indexOf(key)]) || null;
-            } else if (balanceChange < 0) {
-                type = "transferOut";
-                amount = Math.abs(balanceChange) / 1e9; // SOL 单位
-                targetAddress = accountKeys.find(key => key !== wallet && postBalances[accountKeys.indexOf(key)] > preBalances[accountKeys.indexOf(key)]) || null;
+            // 解析 Solscan 返回的交易数据（简化，需根据实际格式调整）
+            if (tx.type === "transfer") {
+                if (tx.from === wallet) {
+                    type = "transferOut";
+                    amount = tx.amount / 1e9; // SOL 单位，需根据实际单位调整
+                    targetAddress = tx.to;
+                } else if (tx.to === wallet) {
+                    type = "transferIn";
+                    amount = tx.amount / 1e9;
+                    sourceAddress = tx.from;
+                }
+                token = "SOL"; // 默认 SOL，需根据实际代币调整
+            } else if (tx.type === "swap" || tx.type === "trade") {
+                // 简化买卖逻辑（需进一步完善）
+                if (tx.to === wallet) {
+                    type = "buy";
+                    token = "SPL"; // 需解析具体代币
+                    amount = tx.amount / 1e6; // 假设 SPL 代币 6 位小数
+                    price = solPrice; // 简化，需历史价格
+                    profitLoss = null;
+                    status = "open";
+                } else if (tx.from === wallet) {
+                    type = "sell";
+                    token = "SPL";
+                    amount = tx.amount / 1e6;
+                    price = solPrice;
+                    profitLoss = amount * price * 0.1; // 示例盈亏
+                    status = profitLoss > 0 ? "profit" : "loss";
+                }
             }
 
-            // 简化买卖逻辑（需进一步完善，加入 DEX 交易解析）
-            instructions.forEach(instr => {
-                if (instr.programId === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" && instr.parsed) { // SPL 代币
-                    const info = instr.parsed.info;
-                    if (info.destination === wallet) {
-                        type = "buy";
-                        token = "SPL"; // 需解析具体代币
-                        amount = info.amount / 1e6; // 假设 6 位小数
-                        price = solPrice; // 简化，需历史价格
-                        profitLoss = null; // 需计算真实盈亏
-                        status = "open";
-                    } else if (info.source === wallet) {
-                        type = "sell";
-                        token = "SPL";
-                        amount = info.amount / 1e6;
-                        price = solPrice;
-                        profitLoss = amount * price * 0.1; // 示例盈亏
-                        status = profitLoss > 0 ? "profit" : "loss";
-                    }
-                }
-            });
-
+            // 假设手续费为固定值（需根据实际数据调整）
+            const fee = tx.fee || 0.0005; // 示例手续费，单位 SOL
             return {
-                txSignature: tx.result.transaction.signatures[0],
-                timestamp: new Date(tx.result.blockTime * 1000).toLocaleString("zh-CN", {timeZone: "Asia/Shanghai"}),
+                txSignature: tx.txHash || tx.signature, // 交易哈希
+                timestamp: new Date(tx.blockTime * 1000).toLocaleString("zh-CN", {timeZone: "Asia/Shanghai"}), // 需根据 Solscan 返回格式调整
                 type,
                 token,
                 amount,
@@ -229,6 +157,12 @@
                 targetAddress,
                 sourceAddress
             };
+        }
+
+        async function fetchSolPrice() {
+            const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usdt");
+            if (!response.ok) throw new Error(`价格获取失败，状态码: ${response.status}`);
+            return (await response.json()).solana.usdt;
         }
 
         async function refreshPrice() {
