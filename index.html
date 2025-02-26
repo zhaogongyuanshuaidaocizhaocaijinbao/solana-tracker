@@ -58,9 +58,9 @@
     <script>
         let solPrice = 0;
         const proxyUrls = [
-            "https://cors-proxy.htmldriven.com/?url=", // 优先使用此代理
-            "https://api.allorigins.win/raw?url=", // 备用
-            "https://cors-anywhere.herokuapp.com/" // 备用，可能需启用
+            "https://thingproxy.freeboard.io/fetch/", // 新的免费代理
+            "https://cors-anywhere.herokuapp.com/", // 可能需启用
+            "https://api.allorigins.win/raw?url=" // 备用
         ];
 
         async function fetchWithProxy(url, options) {
@@ -135,7 +135,7 @@
                 renderData(data);
             } catch (error) {
                 console.error(error);
-                document.getElementById("error").textContent = `查询失败：${error.message}（可能需使用加速器或更换代理）`;
+                document.getElementById("error").textContent = `查询失败：${error.message}（可能需加速器或更换代理）`;
                 document.getElementById("error").style.display = "block";
             } finally {
                 document.getElementById("loading").style.display = "none";
