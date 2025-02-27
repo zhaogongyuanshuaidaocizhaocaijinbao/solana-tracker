@@ -69,34 +69,34 @@
                 document.getElementById("transactions").innerHTML = "";
                 document.getElementById("transfers").innerHTML = "";
 
-                // 调用后端代理 API
-                const proxyUrl = "https://your-vercel-app.vercel.app/api/solscan"; // 替换为实际后端 URL
-                const response = await fetch(`${proxyUrl}?address=${wallet}`);
-                if (!response.ok) throw new Error(`后端 API 响应失败，状态码: ${response.status}`);
-                const transactions = await response.json();
+                // 调用 GMGN API 获取交易数据（示例 URL，需根据实际调整）
+                const gmgnUrl = `https://gmgn.ai/sol/address/${encodeURIComponent(wallet)}`;
+                const response = await fetch(gmgnUrl);
+                if (!response.ok) throw new Error(`GMGN API 响应失败，状态码: ${response.status}`);
+                const data = await response.json();
 
                 // 获取 SOL 价格
                 solPrice = await fetchSolPrice();
 
-                // 解析交易数据
-                const parsedTransactions = transactions.data.map(tx => parseTransaction(tx, wallet));
+                // 解析交易数据（假设 GMGN 返回的格式）
+                const transactions = data.transactions.map(tx => parseTransaction(tx, wallet));
 
-                const data = {
+                const parsedData = {
                     walletAddress: wallet,
                     lastUpdated: new Date().toISOString(),
-                    transactions: parsedTransactions,
+                    transactions,
                     solPrice,
-                    totalProfitLoss: parsedTransactions.reduce((sum, tx) => sum + (tx.profitLoss || 0), 0),
+                    totalProfitLoss: transactions.reduce((sum, tx) => sum + (tx.profitLoss || 0), 0),
                     totalFee: {
-                        sol: parsedTransactions.reduce((sum, tx) => sum + (tx.fee.sol || 0), 0),
-                        usdt: parsedTransactions.reduce((sum, tx) => sum + (tx.fee.usdt || 0), 0)
+                        sol: transactions.reduce((sum, tx) => sum + (tx.fee.sol || 0), 0),
+                        usdt: transactions.reduce((sum, tx) => sum + (tx.fee.usdt || 0), 0)
                     }
                 };
-                localStorage.setItem("solanaData", JSON.stringify(data));
-                renderData(data);
+                localStorage.setItem("solanaData", JSON.stringify(parsedData));
+                renderData(parsedData);
             } catch (error) {
                 console.error(error);
-                document.getElementById("error").textContent = `查询失败：${error.message}（可能需检查网络或后端 API）`;
+                document.getElementById("error").textContent = `查询失败：${error.message}（可能需检查网络或 GMGN API）`;
                 document.getElementById("error").style.display = "block";
             } finally {
                 document.getElementById("loading").style.display = "none";
@@ -104,49 +104,32 @@
         }
 
         function parseTransaction(tx, wallet) {
-            let type = "unknown", token = "SOL", amount = 0, price = null, profitLoss = null, status = "unknown", targetAddress = null, sourceAddress = null;
+            let type = tx.type || "unknown";
+            let token = tx.token || "SOL";
+            let amount = tx.amount || 0;
+            let price = tx.price || null;
+            let profitLoss = tx.profitLoss || null;
+            let status = tx.status || "unknown";
+            let targetAddress = tx.targetAddress || null;
+            let sourceAddress = tx.sourceAddress || null;
 
-            // 解析 Solscan 返回的交易数据（简化，需根据实际格式调整）
-            if (tx.type === "transfer") {
-                if (tx.from === wallet) {
-                    type = "transferOut";
-                    amount = tx.amount / 1e9; // SOL 单位，需根据实际单位调整
-                    targetAddress = tx.to;
-                } else if (tx.to === wallet) {
-                    type = "transferIn";
-                    amount = tx.amount / 1e9;
-                    sourceAddress = tx.from;
-                }
-                token = "SOL"; // 默认 SOL，需根据实际代币调整
-            } else if (tx.type === "swap" || tx.type === "trade") {
-                // 简化买卖逻辑（需进一步完善）
-                if (tx.to === wallet) {
-                    type = "buy";
-                    token = "SPL"; // 需解析具体代币
-                    amount = tx.amount / 1e6; // 假设 SPL 代币 6 位小数
-                    price = solPrice; // 简化，需历史价格
-                    profitLoss = null;
-                    status = "open";
-                } else if (tx.from === wallet) {
-                    type = "sell";
-                    token = "SPL";
-                    amount = tx.amount / 1e6;
-                    price = solPrice;
-                    profitLoss = amount * price * 0.1; // 示例盈亏
-                    status = profitLoss > 0 ? "profit" : "loss";
-                }
+            // 假设 GMGN 返回时间戳（秒）
+            const timestamp = new Date((tx.timestamp || Date.now()) * 1000).toLocaleString("zh-CN", {timeZone: "Asia/Shanghai"});
+            const fee = tx.fee || { sol: 0, usdt: 0 };
+
+            // 转换为 SOL/USDT 单位
+            if (fee.sol) {
+                fee.usdt = fee.sol * solPrice;
             }
 
-            // 假设手续费为固定值（需根据实际数据调整）
-            const fee = tx.fee || 0.0005; // 示例手续费，单位 SOL
             return {
-                txSignature: tx.txHash || tx.signature, // 交易哈希
-                timestamp: new Date(tx.blockTime * 1000).toLocaleString("zh-CN", {timeZone: "Asia/Shanghai"}), // 需根据 Solscan 返回格式调整
+                txSignature: tx.txHash || tx.signature || "N/A",
+                timestamp,
                 type,
                 token,
                 amount,
                 price,
-                fee: { sol: fee, usdt: fee * solPrice },
+                fee,
                 profitLoss,
                 status,
                 targetAddress,
